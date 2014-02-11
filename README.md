@@ -12,3 +12,5 @@ It has another use for a similar reason.  Often when you use a memory card to co
 Warning
 --------
 I don't make any warranty about the reliability of this script.  I wouldn't use it for critical files without first understanding the underlying methods in the code. You should do the same.
+
+Note that with the recently added functionality for creating a copy of unduplicated files, you could easily overwrite existing files accidently.  With great power comes great responsibility... :)
