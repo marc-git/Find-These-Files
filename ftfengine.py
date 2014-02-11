@@ -1,16 +1,17 @@
 """script to check if a file matches those in a directory
 Marc Graham
- Version 0.6.1 - 
+ Version 0.9.9 -
  Improvements:
-      - Added the Controler class (to do the non-UI functions being done by UI)
+      - Added the the functions rem-bir and copy_nondupes adding file ops
 Bugs sqaushed:
       - Danger detection was not working properly, had to flip around the relpath
       - Various NoneType errors causing crashes in exe file
 To be improved:
-    - Do some file operations?
+    - Add hide/show functionality
 """
 
 import hashlib, os
+from shutil import copy2
 
 BLOCKSIZE = 65536
 RECURSE = True
@@ -20,35 +21,35 @@ RVERBOSE = False
 
 class Controler(object):
     """This class provides the functions and variables that interface between
-    UI and engine.  This was introduced to really pull all the non-UI stuff 
+    UI and engine.  This was introduced to really pull all the non-UI stuff
     from ftf, so that a change in user interface would be possible in the future
-    
+
     It has variables:
     self.filesToFind -- A list of files (HashMaker obj) to be looked for (left pane)
-                    Structure is [hM, matches]
+                    Structure is [hM, matches, basedir]
     self.searchDir -- The directory to be searched (right pane)
     self.selectedFile -- The file in filesToFind that we're looking for (?)
     self.matches -- The matches corresponding to that file
     self.danger -- if the added files are inside within the search dir
     """
-    
+
     def __init__(self):
         self.filesToFind = []
         self.searchDir = None
         self.selectedFile = None
         self.matches = None
         self.danger = False
-        
-    def add_file(self, path):
+
+    def add_file(self, path, basedir=None):
         path = self.full_path(path)
         if os.path.isfile(path):
             exists = False
-            for f in self.filesToFind: 
+            for f in self.filesToFind:
                 if f[0].path == path:
                     exists += 1
             if not exists:
                 h = HashMaker(path)
-                self.filesToFind.append([h,None])
+                self.filesToFind.append([h, None, basedir])
                 #check that the file is not within the search
                 if self.searchDir is not None:
                     if self.is_subdir(self.searchDir.compareDir, path):
@@ -67,7 +68,7 @@ class Controler(object):
             if VERBOSE:
                 print("Not a file, moron! "+path)
             return False
-        
+
     def is_subdir(self, path, directory):
         """Checks if we're searching in the same directory"""
         path = self.full_path(path)
@@ -76,7 +77,7 @@ class Controler(object):
         notSub = None
         #if the drive letter is not the same it can't be in the same path
         #relpath will crash if they are on different drives.
-        if RVERBOSE : 
+        if RVERBOSE :
             print(path[0], directory[0])
         if path[0] != directory[0]:
             notSub = True
@@ -96,16 +97,95 @@ class Controler(object):
                 print("Danger... ")
             return True
 
+    def rem_bdir(self, basedir, path):
+        """Returns the path without the hanging basedir"""
+        path = os.path.normpath(path)
+        basedir = os.path.normpath(basedir)
+        smallpath=""
+        while path != basedir:
+            split = os.path.split(path)
+            if os.path.isfile(path):
+                smallpath = "\\" + split[1]
+            else :
+                smallpath = "\\" + split[1] + "\\" + smallpath
+            path = os.path.normpath(split[0])
+        return self.full_path(smallpath)
+
+    def copy_nondupes(self, copyTo, keepStruct, overwrite):
+        """Makes a copy of the checked but not duplicated files to a
+        given (copyTo) location with or without keeping the directory
+        structure (keepStruct)"""
+        print ("Copying")
+        tot = float(len(self.filesToFind))
+        i = 0.0
+        copyTo = self.full_path(copyTo)
+        for f in self.filesToFind:
+            fpath = f[0].path
+            nm = None
+            if isinstance(f[1], list):
+                nm = len(f[1])
+            basedir = f[2]
+            i += 1.0
+            print("Now at ", round(i*100.0/tot,2), "%")
+            if nm == 0 :
+                (p, fn) = os.path.split(fpath)
+                if basedir is not None:
+                    print(basedir, " ", p)
+                    p = self.rem_bdir(basedir, p)
+                    p = p.strip(os.sep)
+                else :
+                    p = ''
+                if not keepStruct :
+                    p = ''
+                newp = os.path.join(copyTo, p)
+                newp = self.full_path(newp)
+                os.makedirs(newp,exist_ok=True)
+                newf = os.path.join(copyTo, fn)
+                newf = self.full_path(newf)
+                if os.path.exists(newf):
+                    if overwrite:
+                        if VERBOSE:
+                            print("Copying ", fpath, " to ", newp)
+                        copy2(fpath, newp)
+                        if VERBOSE:
+                            print("Overwriting ", newf)
+                else:
+                    if VERBOSE:
+                        print("Copying ", fpath, " to ", newp)
+                    copy2(fpath, newp)
+
+
     def get_matches(self, path):
-        """Returns matches to a certain path"""
+        """Returns matches to a certain path. Stores the result against that
+        file.  """
+        result = None
         if self.searchDir is not None:
             path = self.full_path(path)
             for f in self.filesToFind:
                 if path == f[0].path:
-                    f[1] = None
-                    matches = self.searchDir.check(f[0])
-                    f[1] = matches[:]
-                    return f[1]
+                    if isinstance(f[1], list):
+                        if len(f[1]) > 0:
+                            result = f[1]
+                        else :
+                            matches = self.searchDir.check(f[0])
+                            f[1] = matches[:]
+                            result = f[1]
+                    else:
+                        matches = self.searchDir.check(f[0])
+                        f[1] = matches[:]
+                        result = f[1]
+                    return result
+
+    def check_all(self):
+        """Checks all files for matches"""
+        tot = float(len(self.filesToFind))
+        i = 0.0
+        for f in self.filesToFind :
+            if f[1] is None:
+                f[1] = self.searchDir.check(f[0])
+            i += 1.0
+            print(round(i*100.0/tot, 2))
+
 
 
     def clear_matches(self):
@@ -114,14 +194,14 @@ class Controler(object):
             f[1] = None
 
     def set_search_dir(self, dir):
-        """Sets the directory to be searched, taking input from the UI
-        
+        """Sets the directory to be searched, taking input from the UI, clears
+        any match results
         Keyword Argument:
         dir -- The path to the directory to be searched
         """
         self.danger = False
         path = self.full_path(dir)
-        if self.searchDir is not None:
+        if self.searchDir is None:
             if RVERBOSE:
                 print("Setting new search dir "+path)
             self.searchDir = FileTree(path)
@@ -132,7 +212,6 @@ class Controler(object):
                         if VERBOSE:
                             print((self.searchDir.compareDir, f[0].path))
                         self.danger = True
-                        
         else :
             if VERBOSE:
                 print("Resetting search dir to: "+path)
@@ -143,28 +222,29 @@ class Controler(object):
                 if VERBOSE:
                     print("Checking for auto-inclusions...")
                 for f in self.filesToFind:
-                    print(self.searchDir.compareDir, f[0].path)
+                    if RVERBOSE:
+                        print(self.searchDir.compareDir, f[0].path)
                     if self.is_subdir(self.searchDir.compareDir, f[0].path):
                         print("Danger!!! Searched File is in the search Dir!")
                         if VERBOSE:
                             print((self.searchDir.compareDir, f[0].path))
                         self.danger = True
-                        
-        
+
+
     def clear_left(self):
         """Resets the files to be found to as new conditions"""
-        self.filesToFind = []  
+        self.filesToFind = []
         self.selectedFile = None
         self.matches = None
-        
+
     def clear_right(self):
         self.clear_matches()
         self.searchDir = None
-        
+
     def full_path(self, path):
         path = os.path.expandvars(os.path.normpath(path))
         return path
-    
+
 
 class HashMaker(object):
     """This class defines the basic storage unit for files which may or may not be hashed
@@ -219,7 +299,7 @@ class HashMaker(object):
         """Returns a tuple with pathname, size, sHash, fHash"""
         a = (self.path, self.size, self.sHash, self.fHash)
         return a
-        
+
 
 class FileTree(object):
     """
@@ -281,19 +361,21 @@ class FileTree(object):
         self.fHList = []
 
     def check(self, matchFile):
+        """Checks which files in the search dir match a given (matchFile)
+        hashMaker object. Returns an empty list for no result"""
         mD = matchFile
         returnList = []
         #mD will be a single HashMaker object
         self.re_init()
         self.trim_by_size(mD.size)
-        if VERBOSE: 
-            print(str(len(self.sizedList))+" of " + 
+        if VERBOSE:
+            print(str(len(self.sizedList))+" of " +
                   str(len(self.fileList)) + " matched on size...")
         if len(self.sizedList) > 0:
             mD.set_short()
             self.trim_by_sHash(mD.sHash)
             if VERBOSE:
-                print(str(len(self.sHList))+ " of " + 
+                print(str(len(self.sHList))+ " of " +
                       str(len(self.sizedList)) + " matched on short hash")
             #if the trimmed short hash list has matches then continue and
             #trim by full hash
@@ -301,7 +383,7 @@ class FileTree(object):
                 mD.set_full()
                 self.trim_by_fHash(mD.fHash)
                 if VERBOSE:
-                    print(str(len(self.fHList))+ " of " + 
+                    print(str(len(self.fHList))+ " of " +
                           str(len(self.sHList)) + " matched on full hash")
             else:
                 #return no matches on semi-hash
@@ -322,6 +404,6 @@ class FileTree(object):
 
 
 __author__          = "Marc Graham"
-__copyright__       = "Copyright 2013"
+__copyright__       = "Copyright 2014"
 
 

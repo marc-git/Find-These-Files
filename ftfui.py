@@ -1,15 +1,13 @@
 """
 User Interface for Find These Files
-Version 0.9.1
+Version 0.9.9
 Improvements/Changes Made in 0.9:
-    - The lines between UI and engine were blurred, needed to move a lot of the
-      calculating functions back into ftfengine
-    - Renamed to ftfui
+    - Added copy functionality to copy non-duplicates out(!)
 Bugs Squished:
     - Fixed some NoneType errors causing crashes in exe
-    - Fixed Danger operation, looks pretty good now 
+    - Fixed Danger operation, looks pretty good now
 Improvements to come:
-    - Need to add some easy functions like Move duplicated files to a folder
+    - Sort files by name in left pane
 
 """
 
@@ -18,7 +16,7 @@ import ftfengine as ftfe
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import filedialog as fd
-from tkinter import ttk 
+from tkinter import ttk
 
 VERBOSE = False
 #Really VERBOSE
@@ -26,21 +24,21 @@ RVERBOSE = False
 
 class UIWindow(tk.Tk):
     """This is the container class for the Tkinter app.
-    
-        Variables used in here are 
+
+        Variables used in here are
         - self.parent which is a reference to the parent window
         - self.file_names which is a text list of file_names to be checked for
         - self.filesToFind which is a list of lists [name, Hashmaker object]
         - self.dir_name is the text name for the base dir we want to look in
         - lastDir is a place holder to keep the last directory
-        - isFileSelected is a boolean for whether anything has been added to 
+        - isFileSelected is a boolean for whether anything has been added to
             the left window
         - isFolderSelected is a boolean for having selected a folder to search
         - treeList is a FileTree object for the searched dir
         - self.selectedFile is the HashMaker object for the file selected (left)
         - sames is the list of matches as HashMaker objects
     """
-    
+
     def __init__(self,parent):
         tk.Tk.__init__(self,parent)
         self.parent = parent
@@ -56,43 +54,76 @@ class UIWindow(tk.Tk):
 
         self.topGroup= tk.LabelFrame(self.parent)
         self.topGroup.pack(pady=5, padx=5, fill='x', expand='no')
-        
-        self.leftGroup = tk.LabelFrame(self.topGroup, 
+
+        self.leftGroup = tk.LabelFrame(self.topGroup,
                                        text="These are the files you want find...")
         self.leftGroup.pack(side='left')
-        
+
         self.addFiles = tk.Button(
                 self.leftGroup,text="Add file(s) individually...",
                 command=lambda: self.file_pick())
         self.addFiles.pack(side='left', padx=2, pady=5)
-        
-        self.addDirLeftB = tk.Button(self.leftGroup, 
+
+        self.addDirLeftB = tk.Button(self.leftGroup,
                                      text="Add a whole directory",
                                      command=lambda: self.add_folder_select())
         self.addDirLeftB.pack(side='left', padx=2, pady=5)
-        
+
         self.clearEntries = tk.Button(self.leftGroup,
                                       text="Clear list",
                                       command=lambda: self.clear_left())
         self.clearEntries.pack(side='right', padx=2, pady=5)
 
-        self.rightGroup = tk.LabelFrame(self.topGroup, 
+        self.checkAll = tk.Button(self.leftGroup, text="Check All",
+                                  command=lambda: self.check_all())
+        self.checkAll.pack(side='right', padx=2, pady=5)
+
+        self.rightGroup = tk.LabelFrame(self.topGroup,
                                         text="This is the directory you want to search...")
         self.rightGroup.pack(side='right')
-        
+
         self.selSearchDir = tk.Button(self.rightGroup,
-                                      text="Select Search Directory... ", 
+                                      text="Select Search Directory... ",
                                       command=lambda: self.browse_dir())
         self.selSearchDir.pack(padx=2, pady=5)
+
+        self.bottomGroup = tk.LabelFrame(self.parent,
+                                         text="Filter Results")
+        #self.bottomGroup.pack(side='bottom', fill='both', padx=5, pady=5)
+
+        self.showAllB = tk.Button(self.bottomGroup,
+                                  text="Show All",
+                                  command=lambda: self.left_show_all())
+        self.showAllB.pack(side='left')
+        self.hideUnchecked = tk.Button(self.bottomGroup,
+                                       text="Hide Unchecked",
+                                       command=lambda: self.left_hide_unchecked())
+        self.hideUnchecked.pack(side='left')
+        self.hideNoMatch = tk.Button(self.bottomGroup,
+                                     text="Hide Unduplicated",
+                                     command=lambda: self.left_hide_nomatch())
+        self.hideNoMatch.pack(side='left')
+        self.hideMatch = tk.Button(self.bottomGroup,
+                                   text="Hide Duplicated",
+                                   command=lambda: self.left_hide_matched())
+        self.hideMatch.pack(side='left')
+
+        self.actionGroup = tk.LabelFrame(self.parent,
+                                         text="Take Action")
+        self.actionGroup.pack(side='bottom', fill='both', padx=5, pady=5)
+        self.copyOriginals = tk.Button(self.actionGroup,
+                                     text="Copy Un-duplicated",
+                                     command=lambda: self.copy_origs())
+        self.copyOriginals.pack(side='left')
 
         #self.state = tk.Label(self.parent, text="")
         #self.state.pack(side='top')
         #add a Tree Group
         self.tg = tk.LabelFrame(self.parent, text="Files", height=400, padx=5, pady=5)
         self.tg.pack(padx=5, pady=5, side='bottom', fill='both', expand='yes')
-        
+
         #add the left treeviewer
-        
+
         self.tree = ttk.Treeview(self.tg,selectmode="browse",columns=('Matches'))
         self.tree.pack(fill='y', side='left', padx=5)
         self.tree.heading("#0", text="File")
@@ -101,13 +132,13 @@ class UIWindow(tk.Tk):
         self.tree.column("Matches",minwidth=25,stretch='NO',width=40)
         self.tree.bind("<Double-1>", self.on_double_click)
         self.tree.bind("<<TreeviewSelect>>", self.send_selected)
-        
 
-        """self.tree.heading("A", text="Size")   
-        self.tree.column("A",minwidth=0,width=200, stretch='NO') 
-        self.tree.heading("B", text="Matches")   
+
+        """self.tree.heading("A", text="Size")
+        self.tree.column("A",minwidth=0,width=200, stretch='NO')
+        self.tree.heading("B", text="Matches")
         self.tree.column("B",minwidth=0,width=300)"""
-        
+
         #make a tree on the right side
         self.rTree = ttk.Treeview(self.tg,selectmode="browse")
         self.rTree.pack(expand='YES', fill='both', side='left', padx=5)
@@ -115,11 +146,56 @@ class UIWindow(tk.Tk):
         self.rTree.column("#0",minwidth=500,width=500, stretch='YES')
         self.rTree.bind("<Double-1>", self.on_double_click2)
         self.rTree.bind("<<TreeviewSelect>>", self.printSames)
-        
+
     def full_path(self, path):
         path = os.path.expandvars(os.path.normpath(path))
         return path
-        
+
+    def check_all(self):
+        self.ctrl.check_all()
+        self.disp_matches_deep()
+
+    def delete_dupes(self, clearEmpty=True):
+        self.ctrl.delete_dupes()
+
+    def copy_origs(self):
+        copyTo = None
+        keepStruct = None
+        overwrite = None
+        copyTo = fd.askdirectory(initialdir=self.lastdir)
+        copyTo = self.full_path(copyTo)
+        if os.path.exists(copyTo):
+            if len(os.listdir(copyTo)) > 0:
+                if messagebox.askyesno("Directory Not Empty",
+                                           "Do you want to continue?"):
+                    overwrite = messagebox.askyesno("Directory Not Empty",
+                                                    "Do you want to overwrite")
+            else:
+                overwrite = False
+            keepStruct = messagebox.askyesno("Maintain Structure",
+                                             "Do you want to maintain the" +
+                                             " existing directory sub-structure")
+            if not keepStruct :
+                keepStruct = messagebox.askyesno("Warning",
+                                             "This can get messy if files have" +
+                                             " shared names across directories."+
+                                             " Are you sure?")
+            self.ctrl.copy_nondupes(copyTo, keepStruct, overwrite)
+            if VERBOSE:
+                print("Copied")
+
+    def disp_matches_deep(self, child=''):
+        """Recursive method to add a number of matches value for each entry in
+        the left tree"""
+        numMatch = None
+        for i in self.tree.get_children(child):
+            kids = self.tree.get_children(i)
+            if len(kids) > 0:
+                self.disp_matches_deep(i)
+            if os.path.isfile(self.full_path(i)):
+                numMatch = len(self.ctrl.get_matches(self.full_path(i)))
+                self.tree.item(i, values=(str(numMatch)))
+
     def clear_left(self):
         "clears all entries on the left and resets, keeps the treeList"
         #clear left
@@ -131,12 +207,12 @@ class UIWindow(tk.Tk):
         #clear right
         for i in self.rTree.get_children():
             self.rTree.delete(i)
-        
+
     def browse_dir(self):
         if self.dir_name is None:
             self.right_dir_sel()
         else:
-            if messagebox.askyesno("Woah!", 
+            if messagebox.askyesno("Woah!",
                                    "Do you want to clear all the search results"+
                                    " and load a new directory?"):
                 self.dir_name = None
@@ -144,16 +220,16 @@ class UIWindow(tk.Tk):
                 for i in self.rTree.get_children():
                     self.rTree.delete(i)
                 self.right_dir_sel()
-            
-        
+
+
     def printSames(self, event):
         item = self.rTree.selection()[0]
         print("item is ",item)
         print("text is ", self.rTree.item(item, "text"))
         print()
-        
+
     def max_el_size(self):
-        treemaxwidth = 0 
+        treemaxwidth = 0
         for i in self.tree.get_children():
             if i > treemaxwidth :
                 treemaxwidth = i
@@ -162,15 +238,15 @@ class UIWindow(tk.Tk):
     def on_double_click(self, event):
         item = self.tree.selection()[0]
         os.system("explorer.exe /select," + item)
-        
+
     def on_double_click2(self, event):
         item = self.rTree.selection()[0]
         os.system("explorer.exe /select," + item)
-        
+
     def file_pick(self):
         """
         Opens a popup dialog to select one or more files. Stores those names in
-        self.file_names. Sends them to the controler.  Sets 
+        self.file_names. Sends them to the controler.  Sets
         states for isFileSelected.
         """
         self.file_names = fd.askopenfilenames(
@@ -201,7 +277,6 @@ class UIWindow(tk.Tk):
         else:
             self.isFileSelected = False
 
-            
     def right_dir_sel(self):
         self.dir_name = fd.askdirectory(initialdir=self.lastdir)
         if self.dir_name :
@@ -223,9 +298,7 @@ class UIWindow(tk.Tk):
                                                os.path.normpath(self.dir_name)))
         else:
             self.dir_name = None
-        
-            
-            
+
     def pop_folders(self, dirName):
         """Method to add a folder to the RIGHT tree, with hierarchy
         """
@@ -247,7 +320,7 @@ class UIWindow(tk.Tk):
                     self.rTree.insert(j, 'end', full, text=e, tags=('file',))
         else:
             print("Not a directory")
-            
+
     def add_folder_select(self):
         leftDirName = fd.askdirectory(initialdir=self.lastdir)
         if leftDirName :
@@ -259,10 +332,16 @@ class UIWindow(tk.Tk):
             if not self.tree.exists(j):
                 self.tree.insert('', 'end', j, text=j)
                 self.add_folder(j)
-            
-    def add_folder(self, dirName):
-        """Method to add a folder to the left tree, with hierarchy
+
+    def add_folder(self, basedir, dirName=None):
+        """Method to add a folder to the left tree, with hierarchy. This works
+        recursively by scanning through all the directories first, then adding
+        the files.
         """
+        #This will keep track of the basedir through the recursions
+        basedir = self.full_path(basedir)
+        if dirName is None:
+            dirName = basedir
         j = self.full_path(dirName)
         #check if dirname is a dir
         if os.path.isdir(j):
@@ -274,24 +353,24 @@ class UIWindow(tk.Tk):
                 if os.path.isdir(full):
                     if not self.tree.exists(full):
                         self.tree.insert(j, 'end', full, text=e, tags=('dir',))
-                        self.add_folder(full)
+                        self.add_folder(basedir, full)
                     else:
                         self.tree.delete(full)
                         self.tree.insert(j, 'end', full, text=e, tags=('dir',))
-                        self.add_folder(full)
+                        self.add_folder(basedir, full)
             #now do files
             for e in dirList:
                 full = self.full_path(os.path.join(j,e))
                 if os.path.isfile(full):
                     if not self.tree.exists(full):
                         self.tree.insert(j, 'end', full, text=e, tags=('file',))
-                        self.ctrl.add_file(full)
+                        self.ctrl.add_file(full, basedir)
                     else:
                         if RVERBOSE:
                             print("Adding "+full+" but it already exists")
                         self.tree.delete(full)
                         self.tree.insert(j, 'end', full, text=e, tags=('file',))
-                        self.ctrl.add_file(full)
+                        self.ctrl.add_file(full, basedir)
         else:
             if VERBOSE:
                 print("Not a directory")
@@ -304,8 +383,8 @@ class UIWindow(tk.Tk):
 
     def show_sames(self, item):
         """Called by send_selected, this method makes the right side list
-        become a tree of matches.  It's input is item, which is found on 
-        the left list. 
+        become a tree of matches.  It's input is item, which is found on
+        the left list.
         """
         if (self.dir_name is not None):
             self.rTree.tag_configure('highlight', foreground='black')
@@ -322,14 +401,14 @@ class UIWindow(tk.Tk):
             if len(matchList) > 0:
                 self.do_match(matchList)
             else :
-                self.rTree.insert('', 'end', 
+                self.rTree.insert('', 'end',
                                   text="No matches.")
             self.tree.item(item, values=(str(numMatches)))
         else:
-            if messagebox.askyesno("No search directory loaded", 
+            if messagebox.askyesno("No search directory loaded",
                                    "Would you like to load a new search directory?"):
                 self.browse_dir()
-    
+
     def do_match(self, matchList):
         """This really just clears the right list, sets up the list of matches
         and palms them off to add_match for insertion
@@ -338,13 +417,13 @@ class UIWindow(tk.Tk):
             self.rTree.delete(i)
         rootNode = str(str(len(matchList))+" Matches found in... "
                        +str(os.path.normpath(self.dir_name)))
-        self.rTree.insert('', 'end', 
-                          self.full_path(self.dir_name), 
+        self.rTree.insert('', 'end',
+                          self.full_path(self.dir_name),
                           text=rootNode)
         for f in matchList:
             self.add_match(f, self.full_path(self.dir_name))
         self.rTree.tag_configure('idem', foreground='red')
-                
+
     def add_match(self, match, root):
         #remove the trunk path from the path
         spath = self.rem_bdir(os.path.normpath(root), match.path)
@@ -359,11 +438,11 @@ class UIWindow(tk.Tk):
             path = os.path.join(root,top)
         item = self.tree.selection()[0]
         if match.path == item:
-            print("Major Error returning same path matches")  
+            print("Major Error returning same path matches")
         else:
             self.rTree.insert(root, 'end', path, text=top)
         self.rTree.see(path)
-            
+
     def get_top(self, spath):
         split = os.path.split(spath)
         top = None
@@ -374,7 +453,7 @@ class UIWindow(tk.Tk):
         if top is None:
             top = os.path.split(spath)[1]
         return top
-            
+
     def rem_bdir(self, basedir, path):
         """Returns the path without the hanging basedir"""
         path = os.path.normpath(path)
@@ -394,8 +473,8 @@ if __name__ == "__main__":
     app = UIWindow(None)
     app.title('Find these files')
     app.mainloop()
-    
+
 
 __author__          = "Marc Graham"
-__copyright__       = "Copyright 2013"
-__version__         = "0.9"
+__copyright__       = "Copyright 2014"
+__version__         = "0.9.9"
