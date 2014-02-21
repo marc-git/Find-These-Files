@@ -1,24 +1,35 @@
+'''
+Created on 12/02/2013
+
+@author: Marc Graham
+'''
 """
 User Interface for Find These Files
-Version 0.9.9
+Version 0.9.9a
 Improvements/Changes Made in 0.9:
     - Added copy functionality to copy non-duplicates out(!)
 Bugs Squished:
     - Fixed some NoneType errors causing crashes in exe
     - Fixed Danger operation, looks pretty good now
+    - Fixed bug in Copy all which would not cancel when trying to stop
+    - Sorted files by name in left pane
+    - Dealing with hidden files now works better (left pane only)
+      fully implementing that solution would require a smart solution
+      for the ftfengine too.
 Improvements to come:
-    - Sort files by name in left pane
+    - Filtering by number of matches?
 
 """
 
-import os
+import os, ctypes
 import ftfengine as ftfe
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import filedialog as fd
 from tkinter import ttk
 
-VERBOSE = False
+
+VERBOSE = True
 #Really VERBOSE
 RVERBOSE = False
 
@@ -152,37 +163,64 @@ class UIWindow(tk.Tk):
         return path
 
     def check_all(self):
-        self.ctrl.check_all()
-        self.disp_matches_deep()
+        if self.isFolderSelected:
+            matches = self.ctrl.check_all()
+            self.disp_matches_deep()
+            messagebox.showinfo("Finished", message=str(str(matches)
+                                                        + " matches found."))
+        else:
+            messagebox.showinfo("Not ready!",
+                                message=str("Please first select a folder to"+
+                                            " search and/or a file to find"))
+
 
     def delete_dupes(self, clearEmpty=True):
         self.ctrl.delete_dupes()
+
+    def is_hidden(self, filepath):
+        name = os.path.basename(os.path.abspath(filepath))
+        return name.startswith('.') or self.has_hidden_attribute(filepath)
+
+    def has_hidden_attribute(self, filepath):
+        try:
+            attrs = ctypes.windll.kernel32.GetFileAttributesW(filepath)
+            assert attrs != -1
+            result = bool(attrs & 2)
+        except (AttributeError, AssertionError):
+            result = False
+        return result
 
     def copy_origs(self):
         copyTo = None
         keepStruct = None
         overwrite = None
         copyTo = fd.askdirectory(initialdir=self.lastdir)
-        copyTo = self.full_path(copyTo)
-        if os.path.exists(copyTo):
-            if len(os.listdir(copyTo)) > 0:
-                if messagebox.askyesno("Directory Not Empty",
-                                           "Do you want to continue?"):
-                    overwrite = messagebox.askyesno("Directory Not Empty",
-                                                    "Do you want to overwrite")
-            else:
-                overwrite = False
-            keepStruct = messagebox.askyesno("Maintain Structure",
-                                             "Do you want to maintain the" +
-                                             " existing directory sub-structure")
-            if not keepStruct :
-                keepStruct = messagebox.askyesno("Warning",
-                                             "This can get messy if files have" +
-                                             " shared names across directories."+
-                                             " Are you sure?")
-            self.ctrl.copy_nondupes(copyTo, keepStruct, overwrite)
-            if VERBOSE:
-                print("Copied")
+        mbayn = messagebox.askyesno
+        cancel = None
+        if copyTo != '':
+            copyTo = self.full_path(copyTo)
+            if os.path.exists(copyTo):
+                if len(os.listdir(copyTo)) > 0:
+                    msg = "Do you want to continue?"
+                    if mbayn("Directory Not Empty", msg):
+                        msg = "Do you want to overwrite?"
+                        overwrite = mbayn("Directory Not Empty", msg)
+                    else:
+                        cancel = True
+                else:
+                    overwrite = False
+                if not cancel :
+                    msg = "Do you want to maintain the existing directory sub-structure"
+                    keepStruct = mbayn("Maintain Structure", msg)
+                    if not keepStruct :
+                        msg1 = "This can get messy if files have shared names"
+                        msg2 = " across directories. Continue anyway?"
+                        msg = msg1 + msg2
+                        cancel = not mbayn("Warning", msg)
+                    if not cancel:
+                        self.ctrl.copy_nondupes(copyTo, keepStruct, overwrite)
+                        if VERBOSE:
+                            print("Copied")
 
     def disp_matches_deep(self, child=''):
         """Recursive method to add a number of matches value for each entry in
@@ -329,48 +367,61 @@ class UIWindow(tk.Tk):
             i = leftDirName
             j = os.path.join(os.path.split(i)[0],os.path.split(i)[1])
             j = self.full_path(j)
+            mbayn = messagebox.askyesno
+            ph = mbayn("Hidden or System Files", "Ignore Hidden/System Files?")
             if not self.tree.exists(j):
                 self.tree.insert('', 'end', j, text=j)
-                self.add_folder(j)
+                self.add_folder(ph, j)
 
-    def add_folder(self, basedir, dirName=None):
+    def add_folder(self, ignoreHidden, basedir, dirName=None):
         """Method to add a folder to the left tree, with hierarchy. This works
         recursively by scanning through all the directories first, then adding
         the files.
         """
+        ph = ignoreHidden
         #This will keep track of the basedir through the recursions
         basedir = self.full_path(basedir)
         if dirName is None:
             dirName = basedir
         j = self.full_path(dirName)
+        notHidden = None
         #check if dirname is a dir
         if os.path.isdir(j):
             #get the list of directories
             dirList = os.listdir(j)
+            dirList.sort(key=str.lower)
             #do dirs first
             for e in dirList:
                 full = self.full_path(os.path.join(j,e))
-                if os.path.isdir(full):
-                    if not self.tree.exists(full):
-                        self.tree.insert(j, 'end', full, text=e, tags=('dir',))
-                        self.add_folder(basedir, full)
-                    else:
-                        self.tree.delete(full)
-                        self.tree.insert(j, 'end', full, text=e, tags=('dir',))
-                        self.add_folder(basedir, full)
+                notHidden = not self.is_hidden(full)
+                if notHidden or (not ph):
+                    if os.path.isdir(full):
+                        if not self.tree.exists(full):
+                            self.tree.insert(j, 'end', full, text=e, tags=('dir',))
+                            self.add_folder(ph, basedir, full)
+                        else:
+                            self.tree.delete(full)
+                            self.tree.insert(j, 'end', full, text=e, tags=('dir',))
+                            self.add_folder(ph, basedir, full)
+                elif VERBOSE:
+                    print("Ignoring hidden/system directory ", full)
             #now do files
             for e in dirList:
                 full = self.full_path(os.path.join(j,e))
-                if os.path.isfile(full):
-                    if not self.tree.exists(full):
-                        self.tree.insert(j, 'end', full, text=e, tags=('file',))
-                        self.ctrl.add_file(full, basedir)
-                    else:
-                        if RVERBOSE:
-                            print("Adding "+full+" but it already exists")
-                        self.tree.delete(full)
-                        self.tree.insert(j, 'end', full, text=e, tags=('file',))
-                        self.ctrl.add_file(full, basedir)
+                notHidden = not self.is_hidden(full)
+                if (not ph) or notHidden:
+                    if os.path.isfile(full):
+                        if not self.tree.exists(full):
+                            self.tree.insert(j, 'end', full, text=e, tags=('file',))
+                            self.ctrl.add_file(full, basedir)
+                        else:
+                            if RVERBOSE:
+                                print("Adding "+full+" but it already exists")
+                            self.tree.delete(full)
+                            self.tree.insert(j, 'end', full, text=e, tags=('file',))
+                            self.ctrl.add_file(full, basedir)
+                elif RVERBOSE:
+                    print("Ignoring hidden/system file ", full)
         else:
             if VERBOSE:
                 print("Not a directory")

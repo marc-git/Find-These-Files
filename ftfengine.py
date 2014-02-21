@@ -1,3 +1,8 @@
+'''
+Created on 12/02/2013
+
+@author: Marc Graham
+'''
 """script to check if a file matches those in a directory
 Marc Graham
  Version 0.9.9 -
@@ -180,12 +185,15 @@ class Controler(object):
         """Checks all files for matches"""
         tot = float(len(self.filesToFind))
         i = 0.0
+        matchCount = 0
         for f in self.filesToFind :
             if f[1] is None:
                 f[1] = self.searchDir.check(f[0])
+                if len(f[1]) > 0 :
+                    matchCount += 1
             i += 1.0
             print(round(i*100.0/tot, 2))
-
+        return matchCount
 
 
     def clear_matches(self):
