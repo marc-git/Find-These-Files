@@ -110,9 +110,9 @@ class Controler(object):
         while path != basedir:
             split = os.path.split(path)
             if os.path.isfile(path):
-                smallpath = "\\" + split[1]
+                smallpath = os.sep + split[1]
             else :
-                smallpath = "\\" + split[1] + "\\" + smallpath
+                smallpath = os.sep + split[1] + os.sep + smallpath
             path = os.path.normpath(split[0])
         return self.full_path(smallpath)
 
@@ -285,6 +285,7 @@ class HashMaker(object):
         hasher = hashlib.md5()
         with open(ifile, 'rb') as source:
             if block == 0 :
+                print(ifile)
                 buf = source.read()
             else:
                 buf = source.read(block)

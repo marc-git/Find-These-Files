@@ -513,9 +513,9 @@ class UIWindow(tk.Tk):
         while path != basedir:
             split = os.path.split(path)
             if os.path.isfile(path):
-                smallpath = "\\" + split[1]
+                smallpath = os.sep + split[1]
             else :
-                smallpath = "\\" + split[1] + "\\" + smallpath
+                smallpath = os.sep + split[1] + os.sep + smallpath
             path = os.path.normpath(split[0])
         return self.full_path(smallpath)
 
